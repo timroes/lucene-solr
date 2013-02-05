@@ -23,6 +23,7 @@ import java.util.Map;
 import java.util.LinkedHashMap;
 import java.util.Set;
 import java.util.ServiceConfigurationError;
+import org.apache.lucene.util.android.AndroidServiceLoader;
 
 /**
  * Helper class for loading named SPIs from classpath (e.g. Codec, PostingsFormat).
@@ -42,6 +43,31 @@ public final class NamedSPILoader<S extends NamedSPILoader.NamedSPI> implements 
     reload(classloader);
   }
   
+  /**
+   * Reload all services from a given {@link Iterator} over {@link Class classes} of that service.
+   * @param iterator Iterator for all service classes.
+   */
+  private void reloadServices(Iterator<Class<? extends S>> iterator) {
+    final LinkedHashMap<String,S> services = new LinkedHashMap<String,S>(this.services);
+    while(iterator.hasNext()) {
+      final Class<? extends S> c = iterator.next();
+      try {
+        final S service = c.newInstance();
+        final String name = service.getName();
+        // only add the first one for each name, later services will be ignored
+        // this allows to place services before others in classpath to make 
+        // them used instead of others
+        if (!services.containsKey(name)) {
+          checkServiceName(name);
+          services.put(name, service);
+        }
+      } catch(Exception e) {
+        throw new ServiceConfigurationError("Cannot instantiate SPI class: " + c.getName(), e);
+      }
+    }
+    this.services = Collections.unmodifiableMap(services);
+  }
+  
   /** 
    * Reloads the internal SPI list from the given {@link ClassLoader}.
    * Changes to the service list are visible after the method ends, all
@@ -54,25 +80,15 @@ public final class NamedSPILoader<S extends NamedSPILoader.NamedSPI> implements 
    * of new service providers on the given classpath/classloader!</em>
    */
   public void reload(ClassLoader classloader) {
-    final LinkedHashMap<String,S> services = new LinkedHashMap<String,S>(this.services);
-    final SPIClassIterator<S> loader = SPIClassIterator.get(clazz, classloader);
-    while (loader.hasNext()) {
-      final Class<? extends S> c = loader.next();
-      try {
-        final S service = c.newInstance();
-        final String name = service.getName();
-        // only add the first one for each name, later services will be ignored
-        // this allows to place services before others in classpath to make 
-        // them used instead of others
-        if (!services.containsKey(name)) {
-          checkServiceName(name);
-          services.put(name, service);
-        }
-      } catch (Exception e) {
-        throw new ServiceConfigurationError("Cannot instantiate SPI class: " + c.getName(), e);
-      }
+    // If we are running on Android don't use the regular loading via META-INF/services.
+    // Use a more static method to get a list of services.
+    if(System.getProperty("java.runtime.name").toLowerCase().contains("android")) {
+      final Iterable<Class<? extends S>> serviceClasses = AndroidServiceLoader.getServices(clazz);
+      reloadServices(serviceClasses.iterator());
+    } else {
+      final SPIClassIterator<S> loader = SPIClassIterator.get(clazz, classloader);
+      reloadServices(loader);
     }
-    this.services = Collections.unmodifiableMap(services);
   }
   
   /**
