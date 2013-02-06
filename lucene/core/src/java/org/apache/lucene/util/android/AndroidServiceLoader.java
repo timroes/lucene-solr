@@ -3,6 +3,8 @@ package org.apache.lucene.util.android;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.ServiceConfigurationError;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import org.apache.lucene.codecs.Codec;
 import org.apache.lucene.codecs.PostingsFormat;
 
@@ -30,6 +32,8 @@ import org.apache.lucene.codecs.PostingsFormat;
  * @author Tim Roes <tim.roes@inovex.de>
  */
 public class AndroidServiceLoader {
+	
+	private final static Logger logger = Logger.getLogger(AndroidServiceLoader.class.getName());
   
   /**
    * Hard coded list of codecs from all META-INF/services/ files.
@@ -63,7 +67,9 @@ public class AndroidServiceLoader {
       try {
         classes.add((Class<? extends T>)Class.forName(name));
       } catch(ClassNotFoundException ex) {
-        throw new ServiceConfigurationError(String.format("Cannot find class for name '%s'.", name), ex);
+        if(logger.isLoggable(Level.INFO))
+          logger.info(String.format("Cannot find class for name '%s'. Skipping it for service '%s'.", 
+              name, clazz.getName()));
       }
     }
     
